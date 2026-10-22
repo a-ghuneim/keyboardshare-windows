@@ -1,0 +1,2 @@
+# Stable text files across Windows contributors and CI; binary detection stays automatic.
+* text=auto eol=lf
