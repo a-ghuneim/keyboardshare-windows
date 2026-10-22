@@ -297,4 +297,4 @@ Bug reports, focused fixes, and device testing are welcome. Read [CONTRIBUTING.m
 
 ## License
 
-Application source is under the [MIT License](LICENSE). Its copyright-holder placeholder must be completed by the owner before public publication. There are no explicit third-party NuGet application dependencies. Self-contained releases include .NET components under their respective licenses; the packaging script preserves the restored runtime packs' license/notice files in `LICENSES/`.
+Application source is under the [MIT License](LICENSE), attributed to KeyboardShare contributors. There are no explicit third-party NuGet application dependencies. Self-contained releases include .NET components under their respective licenses; the packaging script preserves the restored runtime packs' license/notice files in `LICENSES/`.

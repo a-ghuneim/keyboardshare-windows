@@ -4,10 +4,10 @@ These steps are manual. No script creates a GitHub repository, pushes code, chan
 
 ## Before your first commit
 
-1. Replace `[COPYRIGHT HOLDER - REPLACE BEFORE PUBLICATION]` in `LICENSE` with the copyright holder's chosen public attribution. A filesystem username was not assumed to be a legal identity. The year is 2026.
+1. Review the MIT license, attributed to **KeyboardShare contributors**, as selected for public publication. A filesystem username was not assumed to be a legal identity. The year is 2026.
 2. Rotate any token exposed in screenshots or shared files; set the same fresh random token on both laptops. Never commit operational tokens.
 3. Review source, documentation, and staged changes. Run automated checks and the README's manual two-laptop acceptance checks before claiming device-level validation.
-4. After completing license attribution, rerun the packaging script. Keep runtime notices with the binary distribution.
+4. Rerun the packaging script after any source, documentation, or attribution changes. Keep runtime notices with the binary distribution.
 
 ## Audit scope and findings
 
@@ -89,7 +89,7 @@ Authenticate through GitHub's supported credential flow. Do not embed a password
 
 ## Publish the first release manually
 
-1. Complete license attribution and run the build/tests/manual checks. Rerun packaging from the exact source you commit.
+1. Review license attribution and run the build/tests/manual checks. Rerun packaging from the exact source you commit.
 2. Commit/push the reviewed source and confirm Windows CI succeeds.
 3. Choose **Releases → Draft a new release** on GitHub.
 4. Create tag **`v1.0.0`**, targeting the reviewed `main` commit, and title it **KeyboardShare v1.0.0**. Future tags should match project metadata.
