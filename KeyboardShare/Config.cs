@@ -17,7 +17,8 @@ public sealed class Config
     public void Validate()
     {
         if (Mode is not ("Host" or "Client")) throw new ArgumentException("Mode must be Host or Client.");
-        if (!IPAddress.TryParse(PeerIP, out _) || !IPAddress.TryParse(BindIP, out _)) throw new ArgumentException("Enter literal IP addresses.");
+        if (!IPAddress.TryParse(PeerIP, out _) && (string.IsNullOrWhiteSpace(PeerIP) || Uri.CheckHostName(PeerIP) != UriHostNameType.Dns)) throw new ArgumentException("Enter the other laptop's computer name or IP address (without a URL or port).");
+        if (!IPAddress.TryParse(BindIP, out _)) throw new ArgumentException("Host listen IP must be an IP address. Use 0.0.0.0 with DHCP.");
         if (Port is < 1024 or > 65535) throw new ArgumentException("Port must be 1024–65535.");
         if (Token.Length < 32) throw new ArgumentException("Use a shared token with at least 32 characters.");
         var a = Hotkey.Parse(LocalHotkey); var b = Hotkey.Parse(RemoteHotkey);

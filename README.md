@@ -17,6 +17,14 @@ This project was created because Microsoft PowerToys Mouse Without Borders worke
 
 KeyboardShare is independent, unaffiliated with and not endorsed by Microsoft. Read the [compatibility note](#using-mouse-without-borders) before enabling both applications.
 
+## DHCP update: version 1.0.1
+
+Previously, a DHCP address change could leave sharing disconnected because saved peer addresses no longer matched. This update accepts computer names and resolves them again during reconnect and incoming peer checks. Existing IP-based configuration and shared tokens remain compatible.
+
+To upgrade, install the new app on both laptops, enter the **other laptop's computer name** in **Other laptop name / IP** on each, keep **Host listen IP** at `0.0.0.0`, and update any single-IP firewall rule using the [DHCP firewall instructions](#windows-firewall). The LAN must resolve both names to their current addresses; DNS caching can delay recovery. If name resolution is unavailable, use router DHCP reservations instead.
+
+The update adds regression checks for changing addresses and failed lookups. Token authentication remains required, and reconnect still leaves keyboard control on Laptop 1 until you deliberately switch remotely.
+
 ## Features
 
 - One Windows tray executable for both Host and Client.
@@ -26,6 +34,7 @@ KeyboardShare is independent, unaffiliated with and not endorsed by Microsoft. R
 - Tracked-key release on switching and session cleanup to reduce stuck modifiers.
 - TCP with `NoDelay`, TLS encryption, mutual shared-token authentication, and peer-IP filtering.
 - Automatic Client reconnect attempts and local fallback after a detected disconnect.
+- Computer-name addressing, resolved again during reconnect and incoming peer checks, for networks using DHCP.
 - Saved per-user settings, tray connection/target status, and rotating diagnostic logs.
 
 This is a two-computer keyboard utility, not a full KVM. It does not provide clipboard, file, audio, or mouse sharing.
@@ -54,7 +63,21 @@ To update, exit the existing tray app, replace its files, and launch it again. S
 
 ## First-time setup
 
-### Find both LAN addresses
+### Find both computer names (recommended for DHCP)
+
+On each laptop run:
+
+```powershell
+hostname
+```
+
+The Settings help text also shows **This computer: NAME**. Enter the **other** laptop's name in **Other laptop name / IP** on each computer. Names remain stable when DHCP assigns a new address. For example, Host uses `LAPTOP-CLIENT` and Client uses `LAPTOP-HOST`; replace these example names with your actual names.
+
+Both names must resolve on your LAN through Windows name resolution/DNS. To check from each laptop, run `ping OTHER-COMPUTER-NAME` and see whether Windows displays its current address. A blocked ping reply alone does not mean resolution failed. The app asks Windows for current addresses on every reconnect attempt and incoming peer check; Windows/router DNS caching can delay address updates. There is no custom broadcast discovery service.
+
+Keep **Host listen IP** at `0.0.0.0` and use the DHCP-compatible firewall scope described below. If your network cannot resolve computer names reliably, use router DHCP reservations and fixed-IP configuration instead.
+
+### IP-address alternative
 
 On each laptop, open Command Prompt or PowerShell and run:
 
@@ -74,8 +97,8 @@ Use your actual addresses. Router DHCP reservations help keep them stable. Guest
 ### Laptop 1: Host
 
 1. In Settings select **Host**.
-2. Set **Other laptop IP** to Laptop 2's address.
-3. Leave **Host listen IP** as `0.0.0.0` for IPv4 interfaces, or enter Laptop 1's specific LAN address to bind only that interface.
+2. Set **Other laptop name / IP** to Laptop 2's computer name (recommended for DHCP), or its reserved IP address.
+3. Leave **Host listen IP** as `0.0.0.0` for IPv4 interfaces. A specific bind IP is suitable only if that address remains assigned to the Host.
 4. Leave **TCP port** as `45832`, unless you need another port.
 5. Leave the randomly generated **Shared token** in place. Check **Show token** to reveal it, then copy it to Laptop 2 through a trusted channel. Treat it as a password; never publish it in screenshots.
 6. Leave the hotkeys at their defaults initially.
@@ -84,7 +107,7 @@ Use your actual addresses. Router DHCP reservations help keep them stable. Guest
 ### Laptop 2: Client
 
 1. In Settings select **Client**.
-2. Set **Other laptop IP** to Laptop 1's address.
+2. Set **Other laptop name / IP** to Laptop 1's computer name (recommended for DHCP), or its reserved IP address.
 3. Use the same **TCP port** as the Host.
 4. Replace the Client's generated **Shared token** with the exact token copied from the Host.
 5. Leave **Host listen IP** unchanged; Client networking ignores it. The hotkey fields are only used in Host mode.
@@ -111,16 +134,16 @@ Use modifier names `Control` (or `Ctrl`), `Alt`, `Shift`, and/or `Win`, plus one
 | Setting | Meaning / default |
 | --- | --- |
 | Mode | `Host` listens and captures; `Client` connects and injects |
-| Other laptop IP (`PeerIP`) | Literal IP of the other computer; initial `192.168.1.2` is a placeholder to replace |
+| Other laptop name / IP (`PeerIP`) | Other computer's name or literal IP; initial `192.168.1.2` is a placeholder to replace |
 | Host listen IP (`BindIP`) | Host bind address; default `0.0.0.0`; ignored by Client networking |
 | TCP port | Default `45832`; allowed range `1024`–`65535` |
 | Shared token | Initially 32 random bytes encoded as Base64; same on both; minimum 32 characters |
 | Laptop 1 hotkey | Default `Control+Alt+D1` |
 | Laptop 2 hotkey | Default `Control+Alt+D2` |
 
-Use IPv4 for this setup. The UI requires literal IPs, not computer/DNS names; local interfaces and address families must be compatible. All fields are validated on save, including listen-IP/hotkeys in Client mode. Long predictable tokens can pass validation; use the generated random token.
+Use IPv4 for the documented setup. Peer names may be short Windows computer names or fully qualified DNS names, without a URL prefix or port. Host listen IP still requires a literal IP; local interfaces and address families must be compatible. All fields are validated on save, including listen-IP/hotkeys in Client mode. Long predictable tokens can pass validation; use the generated random token.
 
-Settings live in `%LOCALAPPDATA%\KeyboardShare\config.json` for the current Windows user, including the token in **plaintext**. Saving restarts networking. Opening Host settings first returns control locally. Never share the settings file. If an IP changes, update the other laptop's peer setting and firewall rule.
+Settings live in `%LOCALAPPDATA%\KeyboardShare\config.json` for the current Windows user, including the token in **plaintext**. Saving restarts networking. Opening Host settings first returns control locally. Never share the settings file. Existing IP-based settings and tokens remain compatible; change the peer field to a resolvable name on both machines to tolerate DHCP changes. Fixed-IP settings/firewall rules still require updates if an address changes.
 
 Right-click the tray icon for:
 
@@ -153,6 +176,7 @@ The **Client initiates the TCP connection to the Host**, although keyboard event
 | `KeyboardShare/Config.cs` | JSON settings, token generation, validation, hotkey parsing |
 | `KeyboardShare/KeyboardRouter.cs` | `WH_KEYBOARD_LL` hook, physical-key state, suppression, switching |
 | `KeyboardShare/Network.cs` | TCP/TLS, peer filtering, authentication, framing, reconnect |
+| `KeyboardShare/PeerAddress.cs` | Per-attempt name resolution and normalized address matching |
 | `KeyboardShare/Native.cs` | Win32 interop, `SendInput`, injected-key tracking and cleanup |
 | `KeyboardShare.Tests/Program.cs` | Configuration/authentication/loopback console checks |
 
@@ -162,7 +186,7 @@ The Host low-level keyboard hook forwards normal input locally by default and ig
 
 ### Transport and authentication
 
-The Host checks the configured Client IP before TLS. `SslStream` permits TLS 1.2/1.3, using a self-signed RSA-2048 Host certificate generated at startup. Authentication exchanges fresh 32-byte nonces and HMAC-SHA256 proofs over the server/client nonces and TLS server certificate hash, with distinct role bytes. The HMAC key is SHA-256 of the UTF-8 token. Received proofs use fixed-time comparison. Both sides authenticate before processing input.
+Before TLS, the Host resolves the configured Client name (or uses its literal IP) and checks the incoming address against that result. Failed resolution rejects the attempt without stopping the listener. `SslStream` permits TLS 1.2/1.3, using a self-signed RSA-2048 Host certificate generated at startup. Authentication exchanges fresh 32-byte nonces and HMAC-SHA256 proofs over the server/client nonces and TLS server certificate hash, with distinct role bytes. The HMAC key is SHA-256 of the UTF-8 token. Received proofs use fixed-time comparison. Both sides authenticate before processing input.
 
 Certificate trust comes from this token proof, **not** CA/hostname validation; see [SECURITY.md](SECURITY.md). IP filtering supplements authentication. This custom protocol has not been independently audited.
 
@@ -170,7 +194,7 @@ Packets are six bytes: heartbeat (`0`), key (`1`), release-all (`2`), selected t
 
 ### Connection recovery
 
-The Host handles one Client session at a time. Client connection attempts have a five-second deadline, followed by a separate five-second combined TLS/token-authentication deadline. It waits 1.5 seconds after a failed/ended attempt before retrying. An idle writer sends heartbeats about every 500 ms. Each incoming frame has a three-second read deadline; outgoing writes have a two-second deadline. Detection time depends on traffic and scheduling; these are not real-time guarantees.
+The Host handles one Client session at a time. Each Client attempt resolves the Host name afresh and tries its returned addresses, with a two-second deadline per address within a five-second total resolution/connect deadline. A separate five-second combined TLS/token-authentication deadline follows. Incoming peer-name resolution also has a five-second deadline. The Client waits 1.5 seconds after a failed/ended attempt before retrying. An idle writer sends heartbeats about every 500 ms. Each incoming frame has a three-second read deadline; writes have a two-second deadline. Detection time depends on traffic, DNS caching, and scheduling; these are not real-time guarantees.
 
 On detected disconnect the Host returns locally and the Client attempts to release injected held keys. Reconnection does **not** select Laptop 2 automatically. Lock/suspend stops sharing; unlock/resume restarts networking locally. Host listener startup errors are logged; fix the problem and Save and start or restart the app to retry.
 
@@ -186,15 +210,21 @@ It launches after that user signs in, loads settings, and reconnects. Control st
 
 ## Windows Firewall
 
-Only **Host / Laptop 1** needs an inbound exception. On Laptop 1 open PowerShell as Administrator; adapt the executable path, port, and Client IP:
+Only **Host / Laptop 1** needs an inbound exception. For DHCP, allow the trusted local subnet rather than one changing Client IP. On Laptop 1 open PowerShell as Administrator; adapt the executable path and port:
 
 ```powershell
-New-NetFirewallRule -DisplayName 'KeyboardShare from Laptop 2' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 45832 -Program 'C:\Tools\KeyboardShare\KeyboardShare.exe' -RemoteAddress 192.168.1.20 -Profile Private
+New-NetFirewallRule -DisplayName 'KeyboardShare from Laptop 2' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 45832 -Program 'C:\Tools\KeyboardShare\KeyboardShare.exe' -RemoteAddress LocalSubnet -Profile Private
 ```
 
-Use the **Private** profile only for a trusted LAN. Avoid broader Public-network exceptions; review Windows-prompt-created rules if using the restricted rule above. No inbound exception is needed on Client. Networks restricting outbound traffic need an outbound allowance from Client to Host on that port.
+`LocalSubnet` allows other computers on directly connected subnets to attempt a connection, so use it only on trusted Private networks. The application still rejects addresses that do not resolve from the configured peer name and requires the shared token. For a reserved/static Client address, replace `LocalSubnet` with that single IP for a narrower firewall scope. Avoid Public-network exceptions; review Windows-prompt-created rules. No inbound exception is needed on Client. Networks restricting outbound traffic need an outbound allowance from Client to Host on that port.
 
-Change the rule if the program path, peer IP, or port changes. Never expose the listening port via router internet forwarding. Remove the rule with:
+If you already created the old single-IP rule, update it for DHCP instead of adding a duplicate:
+
+```powershell
+Set-NetFirewallRule -DisplayName 'KeyboardShare from Laptop 2' -RemoteAddress LocalSubnet
+```
+
+Change the rule if the program path/port changes, or if a single-IP scope no longer matches. Never expose the listening port via router internet forwarding. Remove the rule with:
 
 ```powershell
 Remove-NetFirewallRule -DisplayName 'KeyboardShare from Laptop 2'
@@ -202,7 +232,7 @@ Remove-NetFirewallRule -DisplayName 'KeyboardShare from Laptop 2'
 
 ## Security considerations
 
-Use trusted endpoints and a trusted LAN. Copy the random token securely, keep it private, and rotate it on both computers if exposed. It is stored unencrypted in the user profile. The Host can control applications on the Client. Restrict the firewall rule to the peer. Never publish personal settings, unmasked screenshots, or unsanitized logs.
+Use trusted endpoints and a trusted LAN. Copy the random token securely, keep it private, and rotate it on both computers if exposed. It is stored unencrypted in the user profile. The Host can control applications on the Client. Restrict the firewall to a reserved peer IP or a trusted local subnet for DHCP. Name resolution is not authentication; the shared-token proof remains mandatory even if DNS is spoofed. Never publish personal settings, unmasked screenshots, or unsanitized logs.
 
 Keystrokes and tokens are not intentionally logged; exception logs may contain local paths/network details. Logs rotate after approximately 1 MB to one `.old` backup. Read [SECURITY.md](SECURITY.md) for authentication, limitations, and private vulnerability reporting.
 
@@ -217,13 +247,13 @@ Mouse Without Borders also shares keyboards. Two simultaneous forwarders can dup
 | Symptom | What to check |
 | --- | --- |
 | Already running | Find the existing tray icon using the taskbar's hidden-icons arrow |
-| Disconnected | Correct roles/peer IPv4 addresses, identical tokens/ports, Host listening, firewall profile/rule |
+| Disconnected | Correct roles/peer names or addresses, name resolution on both laptops, identical tokens/ports, Host listening, firewall profile/rule |
 | Connected but no typing | Ctrl+Alt+2 on Host, release chord, focus Client app, check elevation |
 | Duplicate characters | Another keyboard forwarder, including Mouse Without Borders |
 | Wrong symbols/numpad | Match layouts and initial Caps Lock/Num Lock states |
 | Shortcut does not switch | Extra modifiers, configured key names, conflicts, remote disconnected |
 | Save not visible | Use the fixed footer; scroll fields/resize. Enter activates Save and start |
-| Failure after IP change | Update peer IP and firewall, then Save and start |
+| Failure after IP change | Use the other computer's resolvable name on both, wildcard Host listen IP, and DHCP-compatible firewall scope; otherwise reserve addresses on the router |
 | Host port occupied | Choose an unused port on both and update firewall; Save and start |
 | Held key after crash | Physically tap/release the modifier on Client; restart apps if needed |
 
@@ -253,7 +283,7 @@ dotnet run --project KeyboardShare.Tests/KeyboardShare.Tests.csproj -c Release
 
 Framework-dependent output is `KeyboardShare/bin/Release/net8.0-windows/`; it needs the .NET 8 Windows Desktop Runtime. Use self-contained publishing for distribution.
 
-The console harness currently performs 14 checks covering config/hotkeys, token/role/transcript proofs, loopback TLS rejection/success, release packets, heartbeats, disconnect, and reconnect. It exits nonzero on failure and injects no keys. Use `dotnet run`; this is not a `dotnet test` framework project.
+The console harness checks config/hotkeys, token/role/transcript proofs, loopback TLS rejection/success, release packets, heartbeats, disconnect/reconnect, hostname validation/resolution, failed lookups, peer address changes, and reconnect to a moved loopback Host without changing saved peer names. It exits nonzero on failure and injects no keys. Use `dotnet run`; this is not a `dotnet test` framework project.
 
 The [Windows CI workflow](.github/workflows/build.yml) builds with warnings as errors, runs checks, and verifies packaging on pushes/PRs. It never publishes a release. Local success does not mean hosted CI has already run.
 
@@ -265,6 +295,7 @@ Before releasing, use two real Windows computers:
 - Test left/right Shift/Ctrl/Alt/Win, repeat, navigation, F keys, numpad with both Num Lock states, Ctrl+C/V/Z, and Alt+Tab.
 - Hold a key/modifier while switching each way and with emergency return. Release the chord and verify neither destination retains held keys.
 - Drop LAN while holding a remote key. Check Client release attempts, Host local fallback, reconnect, and deliberate remote reselection.
+- Configure computer names on both, renew DHCP addresses, and verify the names resolve to the new addresses and sharing reconnects without editing settings. Verify the firewall and wildcard Host bind still allow the connection.
 - Repeat through sleep/wake, lock/unlock, wrong tokens/IPs, standard/elevated apps, and real layouts.
 - Repeat with Mouse Without Borders and the mouse over each computer; confirm it does not also forward keystrokes.
 
@@ -288,6 +319,8 @@ The policy override affects only this PowerShell process. The script reads the v
 
 - `publish/release/KeyboardShare-<version>-win-x64.zip`
 - `publish/release/KeyboardShare-<version>-win-x64.zip.sha256`
+
+If the default executable is running and locked, pass `-OutputDirectory publish/release/1.0.1/win-x64` to publish a separate copy. The ZIP/checksum still appear directly in `publish/release/`.
 
 Upload **the ZIP and checksum** as GitHub Release assets. Do not upload the workspace, `bin/`, `obj/`, personal settings, or logs. Prefer ZIP over a bare EXE so required notices accompany it. A checksum is not a publisher signature. See [PUBLICATION.md](PUBLICATION.md) for first-publication steps.
 

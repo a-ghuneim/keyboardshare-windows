@@ -100,10 +100,10 @@ internal sealed class SettingsForm : Form
         TextBox Box(string text, bool secret = false) => new() { Text = text, Dock = DockStyle.Fill, UseSystemPasswordChar = secret };
         var peer = Box(config.PeerIP); var bind = Box(config.BindIP); var port = Box(config.Port.ToString()); var token = Box(config.Token, true); var local = Box(config.LocalHotkey); var remote = Box(config.RemoteHotkey);
         void Row(string label, Control input) { grid.RowStyles.Add(new RowStyle(SizeType.AutoSize)); grid.Controls.Add(new Label { Text = label, AutoSize = true, Padding = new Padding(0, 6, 0, 0) }); grid.Controls.Add(input); }
-        Row("Mode", mode); Row("Other laptop IP", peer); Row("Host listen IP", bind); Row("TCP port", port); Row("Shared token", token); Row("Laptop 1 hotkey", local); Row("Laptop 2 hotkey", remote);
+        Row("Mode", mode); Row("Other laptop name / IP", peer); Row("Host listen IP", bind); Row("TCP port", port); Row("Shared token", token); Row("Laptop 1 hotkey", local); Row("Laptop 2 hotkey", remote);
         var show = new CheckBox { Text = "Show token", AutoSize = true }; show.CheckedChanged += (_, _) => token.UseSystemPasswordChar = !show.Checked; Row("", show);
         Row("Emergency (fixed)", new Label { Text = "Control+Alt+Escape", AutoSize = true });
-        var help = new Label { Text = "Host listens; Client connects to Host. Enter the OTHER laptop’s IP on each. Copy the same random token to both. Settings are stored locally for your Windows account.", AutoSize = true, MaximumSize = new Size(470, 0) }; grid.Controls.Add(help); grid.SetColumnSpan(help, 2);
+        var help = new Label { Text = $"This computer: {Environment.MachineName}. For DHCP, enter the OTHER computer's name on each laptop and leave Host listen IP at 0.0.0.0. Use the same token on both.", AutoSize = true, MaximumSize = new Size(470, 0) }; grid.Controls.Add(help); grid.SetColumnSpan(help, 2);
         var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(12), WrapContents = false };
         layout.Controls.Add(actions, 0, 1);
         var save = new Button { Text = "Save and start", AutoSize = true }; actions.Controls.Add(save); AcceptButton = save;

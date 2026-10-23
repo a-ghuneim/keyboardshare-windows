@@ -1,11 +1,11 @@
 # Publishes and packages locally. Does not create a tag or contact GitHub.
 [CmdletBinding()]
-param()
+param([string]$OutputDirectory = 'publish/release/win-x64')
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $projectPath = Join-Path $repoRoot 'KeyboardShare/KeyboardShare.csproj'
-$outputPath = Join-Path $repoRoot 'publish/release/win-x64'
+$outputPath = if ([IO.Path]::IsPathRooted($OutputDirectory)) { $OutputDirectory } else { Join-Path $repoRoot $OutputDirectory }
 [xml]$project = Get-Content -LiteralPath $projectPath -Raw
 $version = [string]$project.Project.PropertyGroup.Version
 if ($version -notmatch '^\d+\.\d+\.\d+([-.][0-9A-Za-z.-]+)?$') { throw 'Expected a semantic Version in the application project.' }
@@ -42,6 +42,7 @@ try {
     }
 
     $archiveName = "KeyboardShare-$version-win-x64.zip"
+    New-Item -ItemType Directory -Path (Join-Path $repoRoot 'publish/release') -Force | Out-Null
     $archivePath = Join-Path $repoRoot ('publish/release/' + $archiveName)
     # Explicit allowlist: never package incidental settings, logs or debug symbols.
     $packageFiles = @('KeyboardShare.exe', 'README.md', 'LICENSE', 'SECURITY.md', 'LICENSES') | ForEach-Object { Join-Path $outputPath $_ }

@@ -25,6 +25,7 @@ internal static class Authentication
 internal sealed class Network : IDisposable
 {
     readonly Config config;
+    readonly Func<string, CancellationToken, Task<IPAddress[]>> resolve;
     readonly CancellationTokenSource stop = new();
     Channel<byte[]>? output;
     TcpClient? active;
@@ -32,7 +33,11 @@ internal sealed class Network : IDisposable
     public bool Connected { get => connected; private set => connected = value; }
     public bool TargetRemote { get; private set; }
     public event Action? Changed;
-    public Network(Config config) { this.config = config; }
+    public Network(Config config, Func<string, CancellationToken, Task<IPAddress[]>>? resolver = null)
+    {
+        this.config = config;
+        resolve = resolver ?? ((name, ct) => Dns.GetHostAddressesAsync(name, ct));
+    }
     public Task Run() => Task.Run(async () => { try { if (config.Mode == "Host") await HostLoop(); else await ClientLoop(); } catch (Exception) when (stop.IsCancellationRequested) { } });
     public void SelectTarget(bool remote)
     {
@@ -60,25 +65,49 @@ internal sealed class Network : IDisposable
             while (!stop.IsCancellationRequested)
             {
                 using var tcp = await listener.AcceptTcpClientAsync(stop.Token);
-                if (!PeerMatches(tcp)) continue;
-                try { await Session(tcp, certificate); }
+                try
+                {
+                    using var lookup = CancellationTokenSource.CreateLinkedTokenSource(stop.Token);
+                    lookup.CancelAfter(TimeSpan.FromSeconds(5));
+                    var expected = await PeerAddress.ResolveAsync(config.PeerIP, resolve, lookup.Token);
+                    if (!PeerAddress.Matches(((IPEndPoint)tcp.Client.RemoteEndPoint!).Address, expected)) continue;
+                    await Session(tcp, certificate);
+                }
                 catch (Exception ex) when (!stop.IsCancellationRequested) { Log.Write(ex.Message); }
             }
         }
         catch (Exception ex) when (!stop.IsCancellationRequested) { Log.Write(ex.ToString()); Changed?.Invoke(); }
         finally { listener?.Stop(); }
     }
-    bool PeerMatches(TcpClient tcp) => ((IPEndPoint)tcp.Client.RemoteEndPoint!).Address.MapToIPv6().Equals(IPAddress.Parse(config.PeerIP).MapToIPv6());
+    async Task<TcpClient> ConnectPeer(CancellationToken ct)
+    {
+        var addresses = await PeerAddress.ResolveAsync(config.PeerIP, resolve, ct);
+        Exception? lastError = null;
+        foreach (var address in addresses)
+        {
+            ct.ThrowIfCancellationRequested();
+            var tcp = new TcpClient(address.AddressFamily);
+            try
+            {
+                using var candidate = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                candidate.CancelAfter(TimeSpan.FromSeconds(2));
+                await tcp.ConnectAsync(address, config.Port, candidate.Token);
+                if (!PeerAddress.Matches(((IPEndPoint)tcp.Client.RemoteEndPoint!).Address, addresses)) throw new AuthenticationException("Unexpected peer IP.");
+                return tcp;
+            }
+            catch (Exception ex) when (!ct.IsCancellationRequested) { lastError = ex; tcp.Dispose(); }
+            catch { tcp.Dispose(); throw; }
+        }
+        throw new IOException("Cannot connect to the configured peer's current addresses.", lastError);
+    }
     async Task ClientLoop()
     {
         while (!stop.IsCancellationRequested)
         {
             try
             {
-                using var tcp = new TcpClient();
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(stop.Token); timeout.CancelAfter(TimeSpan.FromSeconds(5));
-                await tcp.ConnectAsync(IPAddress.Parse(config.PeerIP), config.Port, timeout.Token);
-                if (!PeerMatches(tcp)) throw new AuthenticationException("Unexpected peer IP.");
+                using var tcp = await ConnectPeer(timeout.Token);
                 await Session(tcp, null);
             }
             catch (Exception ex) when (!stop.IsCancellationRequested) { Log.Write(ex.Message); }

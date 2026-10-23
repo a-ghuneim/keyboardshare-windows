@@ -33,8 +33,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/Publish.ps1
 
 The version is held in the application project's `<Version>` property. Initial assets:
 
-- `publish/release/KeyboardShare-1.0.0-win-x64.zip`
-- `publish/release/KeyboardShare-1.0.0-win-x64.zip.sha256`
+- `publish/release/KeyboardShare-1.0.1-win-x64.zip`
+- `publish/release/KeyboardShare-1.0.1-win-x64.zip.sha256`
 
 Inspect the archive before uploading. It should contain the EXE, README, LICENSE, SECURITY policy, and `LICENSES/` runtime notices. Never distribute personal configuration, logs, PDBs, or a raw workspace ZIP. The executable is unsigned.
 
@@ -92,7 +92,7 @@ Authenticate through GitHub's supported credential flow. Do not embed a password
 1. Review license attribution and run the build/tests/manual checks. Rerun packaging from the exact source you commit.
 2. Commit/push the reviewed source and confirm Windows CI succeeds.
 3. Choose **Releases → Draft a new release** on GitHub.
-4. Create tag **`v1.0.0`**, targeting the reviewed `main` commit, and title it **KeyboardShare v1.0.0**. Future tags should match project metadata.
+4. Create tag **`v1.0.1`**, targeting the reviewed release commit, and title it **KeyboardShare v1.0.1**. Tags should match project metadata; commit and push the DHCP/name-resolution fix before tagging this release.
 5. Attach the ZIP and `.zip.sha256` listed above from `publish/release/`.
 6. Explain that users extract the ZIP and run the same EXE on both computers: Host where the keyboard is attached, Client on the receiver. Include unsigned-binary, plaintext-token, secure-desktop, and competing-keyboard-forwarder limitations. State which real-device checks you actually performed.
 7. Review the draft and publish when ready.

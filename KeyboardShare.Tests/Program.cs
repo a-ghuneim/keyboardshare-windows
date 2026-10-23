@@ -39,4 +39,73 @@ using (var client = new Network(C("Client", token)))
     Check(true, "host accepts reconnection"); client.Dispose(); await ct.WaitAsync(TimeSpan.FromSeconds(6));
 }
 host.Dispose(); try { await ht.WaitAsync(TimeSpan.FromSeconds(6)); } catch (OperationCanceledException) { }
+
+new Config { PeerIP = "LAPTOP-CLIENT" }.Validate(); Check(true, "Windows computer name accepted");
+new Config { PeerIP = "client.example.test" }.Validate(); Check(true, "qualified hostname accepted");
+Reject(() => new Config { PeerIP = "https://client:45832" }.Validate(), "peer URL rejected");
+Reject(() => new Config { BindIP = "HOST-PC" }.Validate(), "listen address stays a literal IP");
+int resolverCalls = 0;
+IPAddress resolved = IPAddress.Parse("127.0.0.2");
+Task<IPAddress[]> ResolveTest(string _, CancellationToken ct) { ct.ThrowIfCancellationRequested(); resolverCalls++; return Task.FromResult(new[] { resolved }); }
+var first = await PeerAddress.ResolveAsync("peer.test", ResolveTest, CancellationToken.None);
+resolved = IPAddress.Loopback;
+var second = await PeerAddress.ResolveAsync("peer.test", ResolveTest, CancellationToken.None);
+Check(resolverCalls == 2 && !first.SequenceEqual(second), "name is resolved again after address change");
+Check(!PeerAddress.Matches(IPAddress.Loopback, first) && PeerAddress.Matches(IPAddress.Loopback, second), "peer filter tracks changed hostname address");
+Check(PeerAddress.Matches(IPAddress.Loopback.MapToIPv6(), second), "IPv4 mapped peer comparison");
+var literal = await PeerAddress.ResolveAsync("127.0.0.1", ResolveTest, CancellationToken.None);
+Check(resolverCalls == 2 && literal.SequenceEqual(new[] { IPAddress.Loopback }), "existing literal settings bypass DNS");
+var localhost = await PeerAddress.ResolveAsync("localhost", (name, ct) => Dns.GetHostAddressesAsync(name, ct), CancellationToken.None);
+Check(localhost.Any(IPAddress.IsLoopback), "actual Windows localhost resolution");
+try { await PeerAddress.ResolveAsync("empty.test", (_, _) => Task.FromResult(Array.Empty<IPAddress>()), CancellationToken.None); throw new Exception("Empty DNS result accepted"); }
+catch (SocketException) { Check(true, "empty DNS result fails closed"); }
+using (var cancelled = new CancellationTokenSource(100))
+{
+    try { await PeerAddress.ResolveAsync("slow.test", async (_, _) => { await Task.Delay(1000); return new[] { IPAddress.Loopback }; }, cancelled.Token); throw new Exception("DNS deadline ignored"); }
+    catch (OperationCanceledException) { Check(true, "lookup deadline bounds even a slow resolver"); }
+}
+
+async Task Eventually(Func<bool> condition)
+{
+    using var deadline = new CancellationTokenSource(15000);
+    while (!condition()) await Task.Delay(25, deadline.Token);
+}
+
+// Simulate DHCP changes using distinct real loopback listener addresses and a
+// controlled resolver. Configured names and token stay unchanged throughout.
+var dynamicHostConfig = C("Host", token); dynamicHostConfig.PeerIP = "client.test";
+var dynamicClientConfig = C("Client", token); dynamicClientConfig.PeerIP = "host.test";
+IPAddress hostAddress = IPAddress.Parse("127.0.0.2"), allowedClient = IPAddress.Parse("127.0.0.2");
+int clientLookups = 0, hostLookups = 0;
+Task<IPAddress[]> ResolveHost(string name, CancellationToken ct)
+{
+    Interlocked.Increment(ref clientLookups);
+    return Task.FromResult(new[] { Volatile.Read(ref hostAddress) });
+}
+Task<IPAddress[]> ResolveClient(string name, CancellationToken ct)
+{
+    if (Interlocked.Increment(ref hostLookups) == 1) throw new SocketException((int)SocketError.HostNotFound);
+    return Task.FromResult(new[] { Volatile.Read(ref allowedClient) });
+}
+using var dynamicClient = new Network(dynamicClientConfig, ResolveHost); var dynamicClientTask = dynamicClient.Run();
+using var oldHost = new Network(dynamicHostConfig, ResolveClient); var oldHostTask = oldHost.Run();
+await Eventually(() => Volatile.Read(ref clientLookups) >= 2);
+Check(!dynamicClient.Connected, "stale Host address does not authenticate");
+Volatile.Write(ref hostAddress, IPAddress.Loopback);
+await Eventually(() => Volatile.Read(ref hostLookups) >= 2);
+Check(!oldHost.Connected && !dynamicClient.Connected, "transient DNS failure and wrong peer address fail closed");
+Volatile.Write(ref allowedClient, IPAddress.Loopback);
+await Eventually(() => oldHost.Connected && dynamicClient.Connected);
+Check(true, "hostname connection recovers after DNS failure and Client address update");
+int lookupsBeforeMove = Volatile.Read(ref clientLookups);
+oldHost.Dispose(); await oldHostTask.WaitAsync(TimeSpan.FromSeconds(6));
+await Eventually(() => !dynamicClient.Connected);
+Volatile.Write(ref hostAddress, IPAddress.Parse("127.0.0.2"));
+var movedHostConfig = C("Host", token); movedHostConfig.BindIP = "127.0.0.2"; movedHostConfig.PeerIP = "client.test";
+using var movedHost = new Network(movedHostConfig, ResolveClient); var movedHostTask = movedHost.Run();
+await Eventually(() => movedHost.Connected && dynamicClient.Connected);
+Check(Volatile.Read(ref clientLookups) > lookupsBeforeMove, "reconnect follows Host move to a different address without changing peer settings");
+Check(!dynamicClient.TargetRemote, "reconnect after address change leaves keyboard local");
+dynamicClient.Dispose(); movedHost.Dispose();
+await Task.WhenAll(dynamicClientTask, movedHostTask).WaitAsync(TimeSpan.FromSeconds(6));
 Console.WriteLine($"{passed} checks passed.");
